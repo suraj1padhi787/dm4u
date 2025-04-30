@@ -1,12 +1,13 @@
 {
   "build": {
-    "env": {
-      "NODE_ENV": "production"
+    "builder": "NIXPACKS",
+    "nixpacksPlan": {
+      "phases": {
+        "install": {
+          "nixPkgs": ["nodejs_20"]
+        }
+      }
     }
   },
-  "deploy": {
-    "startCommand": "node app.js"
-  }
+  "start": "node app.js"
 }
-
-  
