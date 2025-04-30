@@ -1,8 +1,7 @@
 const { MongoClient, ObjectId } = require('mongodb');
+require('dotenv').config(); // 🟢 Load from .env file
 
-// ✅ MongoDB URI
-const uri = "mongodb+srv://suraj78725:babu321@cluster0.rajqhet.mongodb.net/chatdb?retryWrites=true&w=majority&appName=Cluster0";
-
+const uri = process.env.MONGO_URI; // 🔒 Secure URI from env
 const client = new MongoClient(uri);
 let messagesCollection;
 
