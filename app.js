@@ -1,4 +1,3 @@
-require('dotenv').config(); // first line
 const express = require('express');
 const session = require('express-session');
 const fileUpload = require('express-fileupload');
@@ -7,28 +6,23 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const socketio = require('socket.io');
-const db = require('./db');
+const db = require('./db'); // ✅ SQLite db.js
 const setupOnlineTracking = require('./online');
-
 
 const app = express();
 const server = http.createServer(app);
 const io = socketio(server);
 setupOnlineTracking(io);
 
-// Middleware
+// Middlewares
 app.use(express.static('public'));
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(session({
-    secret: 'whatsappclone',
-    resave: false,
-    saveUninitialized: true
-}));
+app.use(session({ secret: 'sqlitechat', resave: false, saveUninitialized: true }));
 app.use(fileUpload());
 app.set('view engine', 'ejs');
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// User DB
+// User DB (JSON based)
 const USERS_FILE = path.join(__dirname, 'users.json');
 function loadUsers() {
     if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, '[]');
@@ -72,7 +66,6 @@ app.get('/chat/:receiver', (req, res) => {
     const receiver = req.params.receiver;
     const users = loadUsers();
     const found = users.find(u => u.username === receiver);
-
     res.render('chat_user', {
         sender: req.session.user.username,
         receiver,
@@ -98,83 +91,73 @@ app.post('/uploadDp', (req, res) => {
     const file = req.files.dp;
     const username = req.session.user.username;
     const uploadPath = `public/uploads/${username}_${Date.now()}.jpg`;
-
     file.mv(uploadPath, err => {
-        if (err) return res.status(500).send('Upload failed');
+        if (err) return res.status(500).send('Upload Error');
         const users = loadUsers();
-        const i = users.findIndex(u => u.username === username);
-        if (i !== -1) {
-            users[i].dp = uploadPath.replace('public', '');
-            fs.writeFileSync('users.json', JSON.stringify(users, null, 2));
-            req.session.user.dp = users[i].dp;
+        const userIndex = users.findIndex(u => u.username === username);
+        if (userIndex !== -1) {
+            users[userIndex].dp = uploadPath.replace('public', '');
+            fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+            req.session.user.dp = users[userIndex].dp;
         }
         res.redirect('/chat');
     });
 });
 
-// SOCKET.IO EVENTS
+// SOCKET.IO
 io.on('connection', socket => {
-    console.log('✅ User connected');
+    console.log('✅ Socket Connected');
 
-    socket.on('register', ({ username }) => socket.join(username));
+    socket.on('register', ({ username }) => {
+        socket.join(username);
+    });
 
-    socket.on('joinChat', async ({ sender, receiver }) => {
+    socket.on('joinChat', ({ sender, receiver }) => {
         socket.join(sender);
         socket.join(receiver);
-        await db.markMessagesAsSeen(receiver, sender);
+        db.markMessagesAsSeen(receiver, sender);
         db.fetchConversation(sender, receiver, (messages) => {
             socket.emit('loadOldMessages', messages);
         });
         io.to(sender).emit('seenUpdate', { sender: receiver, receiver: sender });
     });
 
-    socket.on('chatMessage', async ({ sender, receiver, message, replyTo }) => {
-        const messageId = await db.insertMessage(sender, receiver, message, 'text', replyTo);
-        io.to(receiver).emit('newMessage', {
-            _id: messageId, sender, receiver,
-            message, type: 'text', time: getCurrentTime(), replyTo
-        });
+    socket.on('chatMessage', ({ sender, receiver, message, replyTo }) => {
+        const messageId = db.insertMessage(sender, receiver, message, 'text', replyTo);
+        io.to(receiver).emit('newMessage', { _id: messageId, sender, receiver, message, type: 'text', time: getCurrentTime(), replyTo });
         socket.emit('messageSent', { _id: messageId });
     });
 
-    socket.on('sendImage', async ({ sender, receiver, imageData, replyTo }) => {
-        const messageId = await db.insertMessage(sender, receiver, imageData, 'image', replyTo);
-        io.to(receiver).emit('newMessage', {
-            _id: messageId, sender, receiver,
-            message: imageData, type: 'image', time: getCurrentTime(), replyTo
-        });
+    socket.on('sendImage', ({ sender, receiver, imageData, replyTo }) => {
+        const messageId = db.insertMessage(sender, receiver, imageData, 'image', replyTo);
+        io.to(receiver).emit('newMessage', { _id: messageId, sender, receiver, message: imageData, type: 'image', time: getCurrentTime(), replyTo });
         socket.emit('messageSent', { _id: messageId });
     });
 
-    socket.on('editMessage', async ({ messageId, newContent }) => {
-        await db.updateMessageById(messageId, newContent);
+    socket.on('editMessage', ({ messageId, newContent }) => {
+        db.updateMessageById(messageId, newContent);
         io.emit('messageEdited', { messageId, newContent });
     });
 
-    socket.on('seen', async ({ sender, receiver }) => {
-        await db.markMessagesAsSeen(receiver, sender);
-        io.to(sender).emit('seenUpdate', { sender, receiver });
-    });
-
-    socket.on('deleteMessage', async ({ messageId }) => {
-        await db.deleteMessageById(messageId);
+    socket.on('deleteMessage', ({ messageId }) => {
+        db.deleteMessageById(messageId);
         io.emit('messageDeleted', { messageId });
     });
 
-    socket.on('disconnect', () => console.log('❌ User disconnected'));
+    socket.on('seen', ({ sender, receiver }) => {
+        db.markMessagesAsSeen(receiver, sender);
+        io.to(sender).emit('seenUpdate', { sender, receiver });
+    });
+
+    socket.on('disconnect', () => {
+        console.log('❌ Socket Disconnected');
+    });
 });
 
 function getCurrentTime() {
-    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const now = new Date();
+    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// ✅ CONNECT DB + START SERVER
-(async () => {
-    try {
-        await db.connect();
-        const PORT = process.env.PORT || 3000;
-        server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
-    } catch (err) {
-        console.error('❌ Failed to start server:', err);
-    }
-})();
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));

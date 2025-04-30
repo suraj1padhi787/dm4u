@@ -1,80 +1,61 @@
-require('dotenv').config();
-const { MongoClient, ObjectId } = require('mongodb');
+// db.js
+const Database = require('better-sqlite3');
+const path = require('path');
+const db = new Database(path.join(__dirname, 'chat.db'));
 
-const uri = process.env.MONGO_URI; // ✔️ Railway variable use karo
-const client = new MongoClient(uri);
-let messagesCollection;
+// Init table
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender TEXT,
+    receiver TEXT,
+    content TEXT,
+    type TEXT,
+    time TEXT,
+    seen INTEGER,
+    replyTo TEXT
+  )
+`).run();
 
-// ✅ Connect to MongoDB
-async function connect() {
-    try {
-        await client.connect();
-        const db = client.db('chatdb');
-        messagesCollection = db.collection('messages');
-        console.log('✅ MongoDB Connected');
-    } catch (err) {
-        console.error('❌ MongoDB Connection Error:', err);
-        throw err;
-    }
+function insertMessage(sender, receiver, content, type = 'text', replyTo = null) {
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const stmt = db.prepare(`
+    INSERT INTO messages (sender, receiver, content, type, time, seen, replyTo)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(sender, receiver, content, type, time, 0, replyTo);
+  return result.lastInsertRowid;
 }
 
-// ✅ Insert new message
-async function insertMessage(sender, receiver, content, type = 'text', replyTo = null) {
-    if (!messagesCollection) return;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const result = await messagesCollection.insertOne({
-        sender,
-        receiver,
-        content,
-        type,
-        time,
-        seen: false,
-        replyTo
-    });
-    return result.insertedId.toString();
+function fetchConversation(sender, receiver, callback) {
+  const stmt = db.prepare(`
+    SELECT * FROM messages WHERE 
+    (sender = ? AND receiver = ?) OR 
+    (sender = ? AND receiver = ?)
+    ORDER BY id ASC
+  `);
+  const messages = stmt.all(sender, receiver, receiver, sender);
+  callback(messages);
 }
 
-// ✅ Get all messages in conversation
-async function fetchConversation(sender, receiver, callback) {
-    if (!messagesCollection) return callback([]);
-    const messages = await messagesCollection.find({
-        $or: [
-            { sender, receiver },
-            { sender: receiver, receiver: sender }
-        ]
-    }).sort({ _id: 1 }).toArray();
-    callback(messages);
+function markMessagesAsSeen(sender, receiver) {
+  db.prepare(`
+    UPDATE messages SET seen = 1 WHERE sender = ? AND receiver = ? AND seen = 0
+  `).run(sender, receiver);
 }
 
-// ✅ Mark messages as seen
-async function markMessagesAsSeen(sender, receiver) {
-    if (!messagesCollection) return;
-    await messagesCollection.updateMany(
-        { sender, receiver, seen: false },
-        { $set: { seen: true } }
-    );
+function deleteMessageById(id) {
+  db.prepare(`DELETE FROM messages WHERE id = ?`).run(id);
 }
 
-// ✅ Delete a message
-async function deleteMessageById(messageId) {
-    if (!messagesCollection || !messageId || messageId.length !== 24) return;
-    await messagesCollection.deleteOne({ _id: new ObjectId(messageId) });
-}
-
-// ✅ Edit a message
-async function updateMessageById(messageId, newContent) {
-    if (!messagesCollection || !messageId || messageId.length !== 24) return;
-    await messagesCollection.updateOne(
-        { _id: new ObjectId(messageId) },
-        { $set: { content: newContent + " (edited)" } }
-    );
+function updateMessageById(id, newContent) {
+  db.prepare(`UPDATE messages SET content = ? WHERE id = ?`).run(newContent + " (edited)", id);
 }
 
 module.exports = {
-    connect,
-    insertMessage,
-    fetchConversation,
-    markMessagesAsSeen,
-    deleteMessageById,
-    updateMessageById
+  insertMessage,
+  fetchConversation,
+  markMessagesAsSeen,
+  deleteMessageById,
+  updateMessageById
 };
