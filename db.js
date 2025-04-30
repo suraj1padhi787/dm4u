@@ -1,11 +1,10 @@
+require('dotenv').config();
 const { MongoClient, ObjectId } = require('mongodb');
-require('dotenv').config(); // 🟢 Load from .env file
 
-const uri = process.env.MONGO_URI; // 🔒 Secure URI from env
+const uri = process.env.MONGO_URI;
 const client = new MongoClient(uri);
 let messagesCollection;
 
-// ✅ Connect and expose collection
 async function connect() {
     try {
         await client.connect();
@@ -18,23 +17,15 @@ async function connect() {
     }
 }
 
-// ✅ Insert Message
 async function insertMessage(sender, receiver, content, type = 'text', replyTo = null) {
     if (!messagesCollection) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const result = await messagesCollection.insertOne({
-        sender,
-        receiver,
-        content,
-        type,
-        time,
-        seen: false,
-        replyTo
+        sender, receiver, content, type, time, seen: false, replyTo
     });
     return result.insertedId.toString();
 }
 
-// ✅ Fetch Conversation
 async function fetchConversation(sender, receiver, callback) {
     if (!messagesCollection) return callback([]);
     const messages = await messagesCollection.find({
@@ -46,7 +37,6 @@ async function fetchConversation(sender, receiver, callback) {
     callback(messages);
 }
 
-// ✅ Mark Messages as Seen
 async function markMessagesAsSeen(sender, receiver) {
     if (!messagesCollection) return;
     await messagesCollection.updateMany(
@@ -55,13 +45,11 @@ async function markMessagesAsSeen(sender, receiver) {
     );
 }
 
-// ✅ Delete Message
 async function deleteMessageById(messageId) {
     if (!messagesCollection || !messageId || messageId.length !== 24) return;
     await messagesCollection.deleteOne({ _id: new ObjectId(messageId) });
 }
 
-// ✅ Edit Message
 async function updateMessageById(messageId, newContent) {
     if (!messagesCollection || !messageId || messageId.length !== 24) return;
     await messagesCollection.updateOne(

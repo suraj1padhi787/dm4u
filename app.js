@@ -1,3 +1,4 @@
+require('dotenv').config(); // first line
 const express = require('express');
 const session = require('express-session');
 const fileUpload = require('express-fileupload');
@@ -8,7 +9,7 @@ const http = require('http');
 const socketio = require('socket.io');
 const db = require('./db');
 const setupOnlineTracking = require('./online');
-require('dotenv').config(); // ✅ Load .env
+
 
 const app = express();
 const server = http.createServer(app);
