@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const socketio = require('socket.io');
-const db = require('./db');
+const db = require('./db'); // ✅ db.js with async connect
 const setupOnlineTracking = require('./online');
 
 const app = express();
@@ -22,14 +22,12 @@ app.use(fileUpload());
 app.set('view engine', 'ejs');
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// User database
+// User DB
 const USERS_FILE = path.join(__dirname, 'users.json');
-
 function loadUsers() {
     if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, '[]');
     return JSON.parse(fs.readFileSync(USERS_FILE));
 }
-
 function saveUser(user) {
     const users = loadUsers();
     users.push(user);
@@ -167,5 +165,9 @@ function getCurrentTime() {
     return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+// ✅ START SERVER ONLY AFTER DB CONNECT
+(async () => {
+    await db.connect(); // important fix
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+})();
