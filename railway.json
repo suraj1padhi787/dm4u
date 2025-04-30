@@ -1,12 +1,6 @@
 {
   "build": {
-    "env": {
-      "NODE_ENV": "production"
-    }
+    "builder": "NIXPACKS"
   },
-  "deploy": {
-    "startCommand": "node app.js"
-  }
+  "start": "bash start.sh"
 }
-
-  
